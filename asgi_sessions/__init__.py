@@ -7,6 +7,9 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from http import cookies
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union, cast
 
+from db.database import dataBase
+import asyncio
+
 from asgi_tools import Request, Response
 from asgi_tools._compat import json_dumps, json_loads
 from asgi_tools.middleware import BaseMiddeware
@@ -52,7 +55,7 @@ class SessionMiddleware(BaseMiddeware):
         super(SessionMiddleware, self).__init__(app)
         assert secret_key, "secret_key is required"
         self.secret_key = secret_key
-        self.cookie_name = cookie_name
+        self.session_name = cookie_name
         self.session_type = session_type
 
         self.cookie_params: Dict[str, Any] = {"path": "/"}
@@ -73,7 +76,7 @@ class SessionMiddleware(BaseMiddeware):
         else:
             request = scope.get("request") or Request(scope, receive, send)
 
-        session = self.init_session(request.cookies.get(self.cookie_name))
+        session = self.init_session(request.session.get(self.session_name))
         scope["session"] = session
 
         # Common ASGI Applications
@@ -104,6 +107,9 @@ class SessionMiddleware(BaseMiddeware):
 
         if self.session_type == "fernet":
             return SessionFernet(token, secret=self.secret_key)
+
+        if self.session_type == "mongodb":
+            return SessionMongoDBStore 
 
         return Session(token)
 
@@ -231,3 +237,31 @@ class SessionFernet(Session):
                 raise
 
         return {}
+
+
+class SessionMongoDB(Session):
+
+    def __init__(self, *args, **kwargs):
+        self.method = self.kwargs.pop('method')
+        self.db = self.kwargs.pop('db')
+        self.col = self.kwargs.pop('col')
+        self.session_key = self.kwargs.pop('session_id')
+        
+        client = dataBase.motorConf("client", self.method)
+        col = client[self.db][self.col]
+
+    async def get(self, key: str, **kwargs: dict) -> Optional[dict]:  # pragma: no cover
+        value = await self.mongodb.get(key.encode(), **kwargs)
+        return _loads(value) if value else None
+
+    async def set(
+        self, key: str, value: dict, exp: Optional[int] = None, **kwargs: dict
+    ) -> Optional[str]:  # pragma: no cover
+        return await self.memcache.set(key.encode(), _dumps(value), exptime=exp, **kwargs)
+
+    async def delete(self, key: str, **kwargs: dict) -> Any:  # pragma: no cover
+        return await self.memcache.delete(key.encode(), **kwargs)
+
+    async def update(self, key: str, value: dict)
+                  
+        
