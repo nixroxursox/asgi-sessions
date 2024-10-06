@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import sys
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from http import cookies
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from asgi_tools import Request, Response
 from asgi_tools._compat import json_dumps, json_loads
@@ -55,16 +54,19 @@ class SessionMiddleware(BaseMiddeware):
         self.cookie_name = cookie_name
         self.session_type = session_type
 
-        self.cookie_params: Dict[str, Any] = {"path": "/"}
+        self.cookie_params: dict[str, Any] = {"path": "/"}
         if max_age:
             self.cookie_params["max-age"] = max_age
         if secure:
             self.cookie_params["secure"] = secure
-        if sys.version_info >= (3, 8) and samesite:  # XXX: Python 3.7
+        if samesite:
             self.cookie_params["samesite"] = samesite
 
     async def __process__(
-        self, scope: Union[TASGIScope, Request], receive: TASGIReceive, send: TASGISend,
+        self,
+        scope: Union[TASGIScope, Request],
+        receive: TASGIReceive,
+        send: TASGISend,
     ):
         """Load/save the sessions."""
         # Support asgi_tools.RequestMiddleware
@@ -93,7 +95,8 @@ class SessionMiddleware(BaseMiddeware):
         response = await self.app(scope, receive, send_wrapper)
         if response and isinstance(response, Response) and session.modified:
             response.headers["Set-Cookie"] = session.cookie(
-                self.cookie_name, self.cookie_params,
+                self.cookie_name,
+                self.cookie_params,
             )
 
         return response
@@ -131,7 +134,7 @@ class Session(dict):
         self.modified = name in self
         dict.__delitem__(self, name)
 
-    def cookie(self, cookie_name: str, cookie_params: Dict) -> str:
+    def cookie(self, cookie_name: str, cookie_params: dict) -> str:
         """Render the data as a cookie string."""
         morsel: cookies.Morsel = cookies.Morsel()
         value = self.encode()
@@ -156,7 +159,7 @@ class Session(dict):
         payload = json_dumps(self)
         return urlsafe_b64encode(payload).decode()
 
-    def decode(self, token: str, *, silent: bool = True) -> Dict:
+    def decode(self, token: str, *, silent: bool = True) -> dict:
         try:
             payload = urlsafe_b64decode(token)
         except ValueError:
@@ -164,7 +167,7 @@ class Session(dict):
                 return {}
             raise
         else:
-            return json_loads(payload)
+            return cast(dict, json_loads(payload))
 
 
 class SessionJWT(Session):
@@ -188,10 +191,10 @@ class SessionJWT(Session):
             return token.decode()
         return token
 
-    def decode(self, token, *, silent=True) -> Dict:
+    def decode(self, token, *, silent=True) -> dict:
         try:
             payload = jwt.decode(token, key=self.secret, algorithms=["HS256"])
-            return cast(Dict, payload)
+            return cast(dict, payload)
         except jwt.DecodeError:
             if not silent:
                 raise
@@ -222,10 +225,10 @@ class SessionFernet(Session):
         payload = json_dumps(self)
         return self.f.encrypt(payload).decode()
 
-    def decode(self, token, *, silent=True) -> Dict:
+    def decode(self, token, *, silent=True) -> dict:
         try:
             payload = self.f.decrypt(token.encode())
-            return json_loads(payload)
+            return cast(dict, json_loads(payload))
         except InvalidToken:
             if not silent:
                 raise
